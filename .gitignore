@@ -1,0 +1,94 @@
+# Biometric data — NEVER commit voice or face embeddings
+# (per PROJECT-SPEC §7: stays only on the home Hermes host)
+gallery/
+**/gallery/
+voice_gallery.json
+face_gallery.json
+*.embedding
+*.embeddings
+
+# Daemon runtime artifacts
+*.log
+daemon.log
+events.jsonl
+*.pid
+
+# Secrets and credentials
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+secrets.yaml
+secrets.json
+secrets.yml
+# Gradle properties hold the GitHub PAT for the Wearables SDK fetch
+# (INSTALLATION-ANDROID Step 6) — defensive ignore in case it's ever
+# placed inside the project rather than ~/.gradle/
+gradle.properties
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+ENV/
+.python-version
+*.egg-info/
+*.egg
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Audio capture scratch (test recordings should be intentional, not auto-tracked)
+*.wav.tmp
+recordings/
+
+# Android Studio / Gradle
+.gradle/
+local.properties
+.idea/
+*.iml
+*.iws
+*.ipr
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Editor / IDE
+.vscode/
+.cursor/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# Claude Code session artifacts
+.claude/local/
+
+# Session handoff / scratch notes (not project material)
+NEXT-STEPS.md
+SESSION-*.md
+SCRATCH-*.md
