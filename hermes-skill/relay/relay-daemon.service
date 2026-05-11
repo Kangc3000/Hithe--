@@ -1,0 +1,36 @@
+[Unit]
+Description=Vision Companion - Relay WebSocket Server
+Documentation=https://github.com/Kangc3000/Hithe--
+After=default.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.hermes/voice-companion/scripts/run-relay.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+StandardOutput=journal
+StandardError=journal
+Environment=PYTHONUNBUFFERED=1
+Environment=HOME=%h
+
+# D-015: 1GB cap. Both ECAPA + InsightFace fit, with headroom for the
+# embedding cache and pending JPEG decodes. If you need more, raise both
+# this and the underlying daemons' caps in lockstep.
+MemoryMax=1G
+MemoryHigh=900M
+
+# Local-only relay; no need to write outside the data dir.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.hermes/voice-companion
+
+# Webcam permission isn't needed (the relay never opens local video),
+# but mic permission isn't either — the relay receives audio over
+# WebSocket. So the unit can run without DeviceAllow at all.
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,35 @@
+[Unit]
+Description=Vision Companion - Face ID Daemon
+Documentation=https://github.com/Kangc3000/Hithe--
+After=default.target sound.target
+Wants=sound.target
+
+[Service]
+Type=simple
+ExecStart=%h/.hermes/voice-companion/scripts/run-face-pipeline.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+StandardOutput=append:%h/.hermes/voice-companion/events.jsonl
+StandardError=append:%h/.hermes/voice-companion/face-daemon.log
+Environment=PYTHONUNBUFFERED=1
+Environment=HOME=%h
+
+# D-015: 1GB RAM cap to protect the 8GB host. ArcFace + buffalo_l fits comfortably.
+MemoryMax=1G
+MemoryHigh=900M
+
+# Light hardening; same posture as voice-id.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.hermes/voice-companion
+
+# Webcam access via /dev/video* requires DeviceAllow on hardened systemd.
+# We allow the entire video subsystem rather than enumerating; remove
+# whichever rules fail on the local kernel if necessary.
+DeviceAllow=char-video4linux rw
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Vision Companion Relay</string>
+
+    <!-- Settings -->
+    <string name="label_host">Hermes host</string>
+    <string name="hint_host">e.g. hermes-host or 100.64.0.5</string>
+    <string name="label_port">Port</string>
+    <string name="hint_port">8765</string>
+    <string name="label_image_fps">Image FPS</string>
+    <string name="hint_image_fps">0 = off, 1, 2, 5</string>
+    <string name="label_log_level">Log level</string>
+    <string name="label_transport">Glasses transport</string>
+    <string name="transport_phone">Phone mic + camera (dev)</string>
+    <string name="transport_meta">Meta Wearables SDK (stub)</string>
+
+    <!-- Controls -->
+    <string name="btn_start">Start relay</string>
+    <string name="btn_stop">Stop relay</string>
+    <string name="btn_test_connection">Test connection</string>
+    <string name="btn_open_logs">Open log folder</string>
+
+    <!-- Status -->
+    <string name="status_stopped">Stopped</string>
+    <string name="status_connecting">Connecting…</string>
+    <string name="status_connected">Connected to %1$s</string>
+    <string name="status_error">Error: %1$s</string>
+
+    <!-- Notification -->
+    <string name="notif_channel_name">Vision Companion relay</string>
+    <string name="notif_channel_desc">Foreground status for the audio/image relay</string>
+    <string name="notif_title">Vision Companion is running</string>
+    <string name="notif_text_connected">Connected to %1$s</string>
+    <string name="notif_text_disconnected">Not connected</string>
+
+    <!-- Permissions -->
+    <string name="perm_rationale">Microphone, camera, and notifications are required to relay audio and image frames to Hermes. Tap Allow to continue.</string>
+</resources>

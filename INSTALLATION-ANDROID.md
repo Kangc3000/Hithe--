@@ -127,35 +127,42 @@ to step 5.
 
 ---
 
-## Step 5 — Clone or scaffold the Android relay app
+## Step 5 — Open the Android relay app in Android Studio
 
-The Android relay app is **not yet written** as of 2026-05-09. When
-it is, this step will say:
+The Android relay app source lives at [`android-relay/`](../android-relay/)
+in this repo. It is a complete, builds-out-of-the-box Android Studio
+project written in Kotlin DSL Gradle.
 
 ```bash
-git clone https://github.com/<your-username>/vision-companion-android.git
-cd vision-companion-android
+# From the repo root:
+cd android-relay
+# Open in Android Studio: File → Open → select this folder
 ```
 
-For now, scaffold a new Empty Activity project in Android Studio:
+What's already wired up:
 
-- New Project → Empty Views Activity
-- Name: `VisionCompanionRelay`
-- Package: `com.kangatnewyork.visioncompanion.relay`
-- Language: Kotlin
-- Min SDK: API 29 (Android 10)
-- Build configuration language: Kotlin DSL (`build.gradle.kts`)
+- Foreground service (`RelayService`) with `microphone | camera` types
+- WebSocket client (OkHttp) to the Hermes `relay_server.py`
+- `GlassesTransport` adapter interface (PROJECT-SPEC.md section 10)
+  - `PhoneMicTransport` — works today using phone mic + speaker
+  - `MetaSdkTransport` — **stub** waiting for Meta SDK access
+- CameraX-based single-shot JPEG capture
+- SharedPreferences-backed settings (host, port, image FPS, log level,
+  transport selector)
+- Structured logging to Logcat + rotating files in
+  `/Android/data/<pkg>/files/logs/`
+- Permissions: RECORD_AUDIO, CAMERA, BLUETOOTH_CONNECT, BLUETOOTH_SCAN,
+  POST_NOTIFICATIONS, FOREGROUND_SERVICE, FOREGROUND_SERVICE_MICROPHONE,
+  FOREGROUND_SERVICE_CAMERA
 
-The relay app will eventually need:
-- Dependencies on Meta's Wearables Device Access Toolkit (added in
-  step 6)
-- Foreground service for the audio streaming pipeline
-- Permissions: `INTERNET`, `BLUETOOTH_CONNECT`, `BLUETOOTH_SCAN`,
-  `RECORD_AUDIO`, `FOREGROUND_SERVICE`
-- A Tailscale-aware HTTP/WebSocket client for the home-server hop
+The "Phone mic + camera (dev)" transport lets the entire end-to-end
+pipeline run **without the Ray-Ban Meta glasses**, which means you can
+test the Hermes relay + voice-id + face-id + TTS round trip the moment
+both sides build. When SDK access lands, only `MetaSdkTransport.kt`
+needs editing.
 
-The full relay app is the next major build deliverable after Phase 1
-runs end-to-end on the Hermes host alone.
+See [`android-relay/README.md`](../android-relay/README.md) for the
+build flow, log paths, and project layout.
 
 ---
 
@@ -210,33 +217,67 @@ from the project root.
 
 ---
 
-## Step 7 — Set up the Hermes host (Phase 1 backend)
+## Step 7 — Set up the Hermes host
 
-This step installs the voice-id daemon, skill, and dependencies on
-your Ubuntu Hermes box. It's idempotent — safe to re-run.
+This step installs the voice-id, face-id, control, and relay skills on
+your Ubuntu Hermes box. Each installer is idempotent. Run them in this
+order — face-id and relay depend on voice-id's shared venv.
 
 On the Ubuntu host (run as your normal user, NOT root):
 
 ```bash
-# Get the project files
 cd ~
-git clone https://github.com/<you>/vision-companion.git
-cd vision-companion/hermes-skill/voice-id
+git clone https://github.com/Kangc3000/Hithe--.git vision-companion
+cd vision-companion
 
-# Run the installer
-chmod +x install-on-hermes.sh
-./install-on-hermes.sh
+# Phase 1: voice-id daemon, TTS bridge, hithe control CLI, state flag.
+# This is the heavy install: ~2 GB of torch + speechbrain.
+chmod +x hermes-skill/voice-id/install-on-hermes.sh
+./hermes-skill/voice-id/install-on-hermes.sh
+
+# Phase 2: face-id daemon. ~250 MB of InsightFace buffalo_l on top.
+chmod +x hermes-skill/face-id/install-on-hermes.sh
+./hermes-skill/face-id/install-on-hermes.sh
+
+# Phase 1.5: the WebSocket relay server. Disables the older standalone
+# voice-id-daemon and face-id-daemon units in favour of one process.
+chmod +x hermes-skill/relay/install-on-hermes.sh
+./hermes-skill/relay/install-on-hermes.sh
+
+# Start the relay
+systemctl --user enable --now relay-daemon
+systemctl --user status relay-daemon
 ```
 
-The installer (see the script for details):
-- Installs apt prerequisites (audio, Python venv, ffmpeg)
-- Creates `~/.hermes/voice-companion/` directory layout
-- Sets up Python 3.11+ venv with SpeechBrain, faster-whisper, etc.
-- Downloads Piper TTS and the bilingual voice models (~60MB total)
-- Installs the `voice-id` SKILL.md into `~/.hermes/skills/`
-- Installs and enables the systemd user service
+When the installs complete, each prints a "next steps" message.
 
-When it completes, you'll see a "Next steps" message.
+The directory layout under `~/.hermes/voice-companion/` is:
+
+```
+.venv/                              shared Python venv
+scripts/
+├── voice_id.py, enroll.py          voice-id daemon + CLI
+├── face_id.py, face_enroll.py      face-id daemon + CLI
+├── tts_announce.py                 Piper bridge (still works standalone for testing)
+├── hithe.py                        on/off CLI
+├── relay_server.py                 the WebSocket server systemd points at
+├── run-pipeline.sh                 legacy voice-id launcher (now unused)
+├── run-face-pipeline.sh            legacy face-id launcher (now unused)
+├── run-relay.sh                    new relay launcher used by relay-daemon.service
+└── gallery/
+    ├── voice_gallery.json          enrollment data — DO NOT COMMIT
+    └── face_gallery.json           enrollment data — DO NOT COMMIT
+models/
+├── ecapa/                          SpeechBrain cache (~80 MB)
+└── insightface/                    buffalo_l cache (~250 MB)
+state/
+└── active.flag                     hithe-managed on/off
+bin/
+└── hithe                           wrapper script (also symlinked to ~/.local/bin)
+config.yaml                         single source of truth
+events.jsonl                        append-only recognition history
+relay-daemon.log                    rotating relay server log
+```
 
 ---
 
@@ -245,25 +286,33 @@ When it completes, you'll see a "Next steps" message.
 Before testing the full pipeline, enroll yourself as the first voice.
 
 ```bash
-cd ~/.hermes/voice-companion/scripts
-source .venv/bin/activate
-
-python enroll.py --record --consent-confirmed \
-    --name-en "Kang" --name-zh "康" \
-    --notes "primary user / spouse"
+~/.hermes/voice-companion/.venv/bin/python \
+  ~/.hermes/voice-companion/scripts/enroll.py \
+  --record --consent-confirmed \
+  --name-en "Kang" --name-zh "康" \
+  --notes "primary user / spouse"
 ```
 
-The script will record three 8-second samples. Speak naturally — talk
-about your day, read a paragraph from a book, anything that's *your*
-voice in *your* normal speaking patterns. Don't whisper or shout.
+The script records three ~4-second samples by default. Speak naturally
+— talk about your day, read a paragraph from a book, anything that's
+*your* voice in *your* normal speaking patterns. Don't whisper or shout.
+
+Note: this enrollment uses the host's local microphone, so plug a USB
+mic in for the enrollment session only. Once you're enrolled, the
+microphone can be removed — the relay server doesn't need it (audio
+arrives over WebSocket from the Android relay).
 
 Verify the gallery:
 
 ```bash
-python enroll.py --list
+~/.hermes/voice-companion/.venv/bin/python \
+  ~/.hermes/voice-companion/scripts/enroll.py --list
 ```
 
 You should see Kang / 康 listed with 3 samples.
+
+To enroll your face for Phase 2, use `face_enroll.py` the same way
+(`--capture --consent-confirmed --name-en ... --name-zh ...`).
 
 ---
 
@@ -320,14 +369,15 @@ run it. It should detect the glasses and show their device ID.
 
 ---
 
-## Step 12 — (Future) Build and install the Android relay app
+## Step 12 — Build and install the Android relay app
 
-This step depends on the relay app source code, which is the next
-major deliverable. When it's ready:
+The relay app source is at [`android-relay/`](../android-relay/) in
+this repo. See [`android-relay/README.md`](../android-relay/README.md)
+for the full build/run flow; the short version:
 
 ```bash
-cd vision-companion-android
-./gradlew installDebug
+cd android-relay
+./gradlew :app:installDebug    # builds + installs on connected device
 ```
 
 You'll need:
@@ -337,8 +387,14 @@ You'll need:
 - The S25 connected to your dev machine via USB-C, with the "Allow USB
   debugging?" prompt accepted on the phone
 - Tailscale running on both the S25 and the Hermes host
-- The relay app configured with the Tailscale IP of the Hermes host
-  (set in the app's first-run config screen)
+- The relay app configured with the tailnet hostname or IP of the
+  Hermes host (set in the app's first-run config screen)
+
+Until Meta Wearables SDK access is granted, leave the **Glasses
+transport** setting on "Phone mic + camera (dev)" — the app uses the
+phone's own hardware so the whole pipeline can be exercised without
+the glasses. Switch to the Meta transport once
+`MetaSdkTransport.kt` is filled in.
 
 ---
 

@@ -23,10 +23,20 @@ events.jsonl
 secrets.yaml
 secrets.json
 secrets.yml
-# Gradle properties hold the GitHub PAT for the Wearables SDK fetch
-# (INSTALLATION-ANDROID Step 6) — defensive ignore in case it's ever
-# placed inside the project rather than ~/.gradle/
+# Gradle properties may hold the GitHub PAT for the Wearables SDK fetch
+# (INSTALLATION-ANDROID Step 6). Default-exclude as a defense in case a
+# credentials file lands at the wrong path; but the project's own build
+# config at android-relay/gradle.properties has no secrets and IS tracked.
 gradle.properties
+!android-relay/gradle.properties
+# Android signing keys (BUILDING-APK.md Step 1). Losing the keystore
+# means losing the ability to update the published app, so it MUST be
+# kept outside the repo entirely. These patterns are belt-and-suspenders.
+*.keystore
+*.jks
+release.keystore
+release.jks
+signing.properties
 
 # Python
 __pycache__/

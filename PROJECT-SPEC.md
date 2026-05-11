@@ -114,6 +114,7 @@ a replacement for her white cane or other established AT.
 | D-013 | Personal/home version first; classroom only via ADA | See `docs/CLASSROOM-CONSIDERATIONS.md` |
 | D-014 | All scripts under `~/.hermes/voice-companion/` | One stable home; survives Hermes upgrades |
 | D-015 | All daemons capped at 1GB RAM via systemd | Prevents runaway processes on 8GB host |
+| D-016 | Soft activate/deactivate via single state flag | A flag file at `~/.hermes/voice-companion/state/active.flag` gates announcement events for all recognition daemons. Toggling is via `hithe on/off`; daemon process keeps running and models stay loaded so resume is near-instant. Heavier `systemctl stop` is reserved for actual shutdown. |
 
 ## 5. Component contracts (locked)
 

@@ -1,0 +1,21 @@
+# Vision Companion - voice-id daemon Python dependencies
+# Tested with Python 3.11+ on Ubuntu 26.04.
+# Total install size is dominated by torch (~2GB).
+
+# Speaker embeddings (ECAPA-TDNN, ~80MB model)
+speechbrain>=1.0.0,<2.0.0
+
+# Torch is required by speechbrain. CPU-only is fine for ECAPA on the 8GB host.
+torch>=2.1.0,<3.0.0
+torchaudio>=2.1.0,<3.0.0
+
+# Audio I/O
+sounddevice>=0.4.6,<0.5.0
+soundfile>=0.12.1,<0.13.0
+numpy>=1.24.0,<3.0.0
+
+# Config
+PyYAML>=6.0,<7.0
+
+# Local TTS
+piper-tts>=1.2.0,<2.0.0

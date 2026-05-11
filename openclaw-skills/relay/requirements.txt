@@ -1,0 +1,6 @@
+# Vision Companion - relay_server Python dependencies (incremental on top
+# of voice-id and face-id requirements; installs into the same venv).
+
+# WebSocket server. websockets has stable asyncio API since v11; we pin
+# loosely so security patches flow through.
+websockets>=12.0,<14.0
