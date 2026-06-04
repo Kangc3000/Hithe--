@@ -44,6 +44,7 @@ import asyncio
 import json
 import logging
 import logging.handlers
+import os
 import signal
 import sys
 import time
@@ -52,6 +53,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse, parse_qs
 
 import cv2
 import numpy as np
@@ -289,6 +291,23 @@ def handle_image_frame(session: Session, image: np.ndarray) -> None:
 ACTIVE_CLIENT_LOCK = asyncio.Lock()
 ACTIVE_CLIENT: WebSocketServerProtocol | None = None
 
+# WebSocket close code reserved for "token missing/invalid". 4000-4999 is
+# the application-defined range per RFC 6455.
+CLOSE_CODE_INVALID_TOKEN = 4401
+
+
+def extract_token(ws_path: str) -> str:
+    """Pull the `token` query-string parameter out of the WebSocket path.
+    Returns empty string if not present. The path arrives with the query
+    string intact, e.g. '/?token=vcr_abc' (after Apache strips '/vc-relay/')."""
+    try:
+        parsed = urlparse(ws_path)
+        qs = parse_qs(parsed.query)
+        values = qs.get("token") or []
+        return values[0] if values else ""
+    except Exception:
+        return ""
+
 
 async def writer_task(session: Session) -> None:
     """Drain the out_queue and forward to the WebSocket. Separated from the
@@ -319,11 +338,32 @@ async def handle_connection(
     face_gallery: list[fi.GalleryEntry],
     state_dir: Path,
     events_log: Path,
+    expected_token: str,
 ) -> None:
     global ACTIVE_CLIENT
 
     peer = f"{ws.remote_address[0]}:{ws.remote_address[1]}"
-    LOG.info("client connecting peer=%s", peer)
+    LOG.info("client connecting peer=%s path=%r", peer, ws.path)
+
+    # ---- token auth (only enforced if a token is configured) ----
+    if expected_token:
+        client_token = extract_token(ws.path)
+        if not client_token:
+            LOG.warning("rejecting %s: no token in query string", peer)
+            await ws.close(code=CLOSE_CODE_INVALID_TOKEN, reason="missing token")
+            return
+        # Constant-time comparison to avoid timing attacks.
+        from hmac import compare_digest
+        if not compare_digest(client_token, expected_token):
+            LOG.warning(
+                "rejecting %s: token mismatch (client sent %d chars)",
+                peer, len(client_token),
+            )
+            await ws.close(code=CLOSE_CODE_INVALID_TOKEN, reason="invalid token")
+            return
+        LOG.info("token validated for peer=%s", peer)
+    else:
+        LOG.debug("no token configured; skipping auth for peer=%s", peer)
 
     async with ACTIVE_CLIENT_LOCK:
         if ACTIVE_CLIENT is not None and not ACTIVE_CLIENT.closed:
@@ -458,6 +498,16 @@ async def serve(args: argparse.Namespace) -> None:
     args.state_dir.mkdir(parents=True, exist_ok=True)
     args.events_log.parent.mkdir(parents=True, exist_ok=True)
 
+    # Token may be passed via --token or RELAY_TOKEN env var. Empty = no auth.
+    expected_token = (args.token or os.environ.get("RELAY_TOKEN") or "").strip()
+    if expected_token:
+        LOG.info("token auth enabled (token length=%d)", len(expected_token))
+    else:
+        LOG.warning(
+            "no relay token configured (--token / RELAY_TOKEN both empty); "
+            "ANY client that can reach this port can connect"
+        )
+
     LOG.info(
         "starting WebSocket server on %s:%d (voice=%d enrolled, face=%d enrolled)",
         args.host, args.port, len(voice_gallery), len(face_gallery),
@@ -475,6 +525,7 @@ async def serve(args: argparse.Namespace) -> None:
             face_gallery=face_gallery,
             state_dir=args.state_dir,
             events_log=args.events_log,
+            expected_token=expected_token,
         )
 
     stop = asyncio.Event()
@@ -516,6 +567,16 @@ def main(argv: list[str] | None = None) -> int:
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Logging verbosity (default INFO; DEBUG dumps per-chunk stats)",
+    )
+    parser.add_argument(
+        "--token",
+        default="",
+        help=(
+            "Shared secret. If non-empty, incoming WebSocket connections must "
+            "carry ?token=<value> in the URL or they are rejected with close "
+            f"code {CLOSE_CODE_INVALID_TOKEN}. Falls back to the RELAY_TOKEN "
+            "env var if --token is not provided."
+        ),
     )
     args = parser.parse_args(argv)
 

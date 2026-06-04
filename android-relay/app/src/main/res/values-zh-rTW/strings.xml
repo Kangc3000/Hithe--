@@ -2,10 +2,9 @@
 <resources>
     <string name="app_name">解語中繼</string>
 
-    <string name="label_host">Hermes 主機</string>
-    <string name="hint_host">例如 hermes-host 或 100.64.0.5</string>
-    <string name="label_port">連接埠</string>
-    <string name="hint_port">8765</string>
+    <string name="label_server_url">伺服器網址</string>
+    <string name="hint_server_url">wss://kangatnewyork.com/vc-relay/?token=vcr_xxx</string>
+    <string name="help_server_url">完整 WebSocket URL。對外公開走 wss://，Tailscale 直連用 ws://。</string>
     <string name="label_image_fps">影像 FPS</string>
     <string name="hint_image_fps">0 = 關閉、1、2、5</string>
     <string name="label_log_level">紀錄等級</string>

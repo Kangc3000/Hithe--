@@ -108,10 +108,10 @@ class RelayService : LifecycleService() {
     }
 
     private suspend fun runPipeline() {
-        val host = settings.host.trim()
-        val port = settings.port
-        if (host.isEmpty()) {
-            Logger.e(tag, "runPipeline: host not configured; idling")
+        val url = settings.serverUrl.trim()
+        val rejection = settings.validateServerUrl(url)
+        if (rejection != null) {
+            Logger.e(tag, "runPipeline: server URL invalid: $rejection (url='$url'); idling")
             return
         }
 
@@ -137,7 +137,7 @@ class RelayService : LifecycleService() {
         // Backoff: 1s, 2s, 4s, 8s, capped at 30s.
         var backoffMs = 1_000L
         while (currentCoroutineActive()) {
-            val c = RelayClient(host, port)
+            val c = RelayClient(url)
             client = c
             c.connect()
 

@@ -34,13 +34,18 @@ cooldowns) is created fresh for each Android session.
 English:
 - "is the relay server running?"
 - "show me the last hour of relay events"
-- "reload the voice gallery without restarting"  *(future)*
-- "what's the latency to the phone?"  *(future, ping/pong telemetry)*
+- "what's my relay URL?"  *(prints the URL to put in the Android app)*
+- "show me the relay token"
+- "rotate the relay token"
+- "what URL should I put in the Android app?"
 - "restart the relay"
 
 中文:
 - "Relay 還在跑嗎?"
 - "最近一小時 relay 有什麼事件?"
+- "目前的 token 是什麼?"
+- "換新 token"
+- "手機 App 要填什麼網址?"
 - "重啟 relay 服務"
 
 ## When NOT to use this skill
@@ -103,6 +108,50 @@ systemctl --user restart relay-daemon
 
 The Android relay app is configured with `Reconnect=true`; it should
 re-establish within a few seconds.
+
+### Read the current token
+
+```bash
+# Stored in two places (drop-in is the source of truth; config.yaml is
+# the discoverable copy):
+grep '^Environment=RELAY_TOKEN=' \
+  ~/.config/systemd/user/relay-daemon.service.d/token.conf 2>/dev/null \
+  | cut -d= -f3
+# Or:
+grep '^relay_token:' ~/.hermes/voice-companion/config.yaml | cut -d'"' -f2
+```
+
+When the user asks "what's my relay URL?", combine the public domain
+(stored elsewhere — currently `kangatnewyork.com`), the path (currently
+`/vc-relay/`), and the token to construct:
+
+```
+wss://kangatnewyork.com/vc-relay/?token=<token>
+```
+
+### Rotate the token
+
+```bash
+NEW="vcr_$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
+mkdir -p ~/.config/systemd/user/relay-daemon.service.d/
+cat > ~/.config/systemd/user/relay-daemon.service.d/token.conf <<EOF
+[Service]
+Environment=RELAY_TOKEN=${NEW}
+EOF
+
+# Mirror to config.yaml for discoverability:
+sed -i "s|^relay_token:.*|relay_token: \"${NEW}\"|" \
+  ~/.hermes/voice-companion/config.yaml
+
+systemctl --user daemon-reload
+systemctl --user restart relay-daemon
+
+echo "${NEW}"
+```
+
+Tell the user the new token and that they need to update the Android
+app's URL. Old connections will be allowed to finish but new ones will
+need the new token.
 
 ### Per-port debugging from the host itself
 

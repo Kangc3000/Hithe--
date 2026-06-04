@@ -3,10 +3,9 @@
     <string name="app_name">Vision Companion Relay</string>
 
     <!-- Settings -->
-    <string name="label_host">Hermes host</string>
-    <string name="hint_host">e.g. hermes-host or 100.64.0.5</string>
-    <string name="label_port">Port</string>
-    <string name="hint_port">8765</string>
+    <string name="label_server_url">Server URL</string>
+    <string name="hint_server_url">wss://kangatnewyork.com/vc-relay/?token=vcr_xxx</string>
+    <string name="help_server_url">Full WebSocket URL. Use wss:// for the public Apache route, ws:// for direct Tailscale.</string>
     <string name="label_image_fps">Image FPS</string>
     <string name="hint_image_fps">0 = off, 1, 2, 5</string>
     <string name="label_log_level">Log level</string>

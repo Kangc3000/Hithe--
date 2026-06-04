@@ -23,25 +23,16 @@
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="@string/label_host">
+            android:hint="@string/label_server_url"
+            app:helperText="@string/help_server_url"
+            app:helperTextEnabled="true">
             <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/hostField"
+                android:id="@+id/serverUrlField"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:inputType="textUri"
-                android:hint="@string/hint_host" />
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <com.google.android.material.textfield.TextInputLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="@string/label_port">
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/portField"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="number"
-                android:hint="@string/hint_port" />
+                android:singleLine="true"
+                android:hint="@string/hint_server_url" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.textfield.TextInputLayout

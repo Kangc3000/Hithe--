@@ -60,8 +60,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun bindUi() {
-        binding.hostField.setText(settings.host)
-        binding.portField.setText(settings.port.toString())
+        binding.serverUrlField.setText(settings.serverUrl)
         binding.imageFpsField.setText(settings.imageFps.toString())
 
         when (settings.transport) {
@@ -99,8 +98,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun persistFromUi() {
-        settings.host = binding.hostField.text?.toString().orEmpty()
-        settings.port = binding.portField.text?.toString()?.toIntOrNull() ?: Settings.DEFAULT_PORT
+        settings.serverUrl = binding.serverUrlField.text?.toString().orEmpty().trim()
         settings.imageFps = binding.imageFpsField.text?.toString()?.toIntOrNull() ?: 0
         settings.transport =
             if (binding.transportPhone.isChecked) Settings.Transport.PHONE
@@ -109,19 +107,21 @@ class MainActivity : AppCompatActivity() {
             binding.logLevelSpinner.selectedItem?.toString() ?: "INFO"
         )
         Logger.setLevel(settings.logLevel)
-        Logger.i(tag, "settings persisted host=${settings.host} port=${settings.port} fps=${settings.imageFps} transport=${settings.transport} log=${settings.logLevel}")
+        // Strip token from URL before logging so it doesn't end up in log files.
+        val safeUrl = settings.serverUrl.substringBefore('?')
+        Logger.i(tag, "settings persisted url=$safeUrl fps=${settings.imageFps} transport=${settings.transport} log=${settings.logLevel}")
     }
 
     private fun runTestConnection() {
-        val host = settings.host.trim()
-        val port = settings.port
-        if (host.isEmpty()) {
-            binding.statusText.text = getString(R.string.status_error, "host empty")
+        val url = settings.serverUrl.trim()
+        val rejection = settings.validateServerUrl(url)
+        if (rejection != null) {
+            binding.statusText.text = getString(R.string.status_error, rejection)
             return
         }
         binding.statusText.setText(R.string.status_connecting)
         lifecycleScope.launch {
-            val client = RelayClient(host, port)
+            val client = RelayClient(url)
             val gotPong = CompletableDeferred<Boolean>()
             val drain = launch {
                 client.events.collect { ev ->
@@ -147,8 +147,9 @@ class MainActivity : AppCompatActivity() {
             try {
                 client.connect()
                 val success = withTimeoutOrNull(5_000) { gotPong.await() } ?: false
+                val display = url.substringBefore('?')
                 if (success) {
-                    binding.statusText.text = getString(R.string.status_connected, "$host:$port")
+                    binding.statusText.text = getString(R.string.status_connected, display)
                 } else {
                     binding.statusText.text = getString(R.string.status_error, "timeout")
                 }

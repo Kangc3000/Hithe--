@@ -110,6 +110,24 @@ openai_max_tokens: 200
 scene_describe_default_language: zh
 scene_describe_modes: [scene, ocr, sign, menu]
 
+# ------ Network ------
+
+# Shared secret for the WebSocket relay. When non-empty, incoming
+# connections must include ?token=<value> in the URL or they are rejected
+# with WebSocket close code 4401. Generate with:
+#   echo "vcr_$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
+#
+# This is normally set via the systemd drop-in at
+# ~/.config/systemd/user/relay-daemon.service.d/token.conf using
+# Environment=RELAY_TOKEN=...  Leaving it here makes the canonical value
+# discoverable (e.g. so Hermes can read it back to the user on request).
+# If both this and RELAY_TOKEN env are set, --token CLI / env wins.
+#
+# WARNING: leaving this empty when the relay is exposed to the public
+# internet (e.g. via Apache + Tailscale + a public domain) means anyone
+# who finds the URL can connect. Do not deploy publicly without a token.
+relay_token: ""
+
 # ------ Hard interlocks (NEVER weaken in code) ------
 
 # When true, the daemon refuses all cloud calls AND skips all face/voice

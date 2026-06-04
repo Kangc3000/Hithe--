@@ -23,15 +23,18 @@ import java.util.concurrent.atomic.AtomicBoolean
  * service can collect. Auto-reconnect is left to the caller (the
  * service), which adds a delay and backoff.
  *
- * All log lines include the configured host/port to make pcap/grep
- * cross-referencing easy.
+ * The serverUrl is the full WebSocket URL — supports `ws://` (plain) and
+ * `wss://` (TLS, used when going through Apache + Let's Encrypt). The
+ * token belongs in the URL query string; this class does not extract or
+ * massage it.
  */
 class RelayClient(
-    private val host: String,
-    private val port: Int,
+    private val serverUrl: String,
 ) {
     private val tag = "Net"
-    private val peerLabel = "$host:$port"
+    // For logs we strip the token query string so it doesn't leak into log
+    // files. The pre-? part is fine to show.
+    private val peerLabel: String = serverUrl.substringBefore('?').take(120)
 
     private val client = OkHttpClient.Builder()
         .pingInterval(20, TimeUnit.SECONDS)
@@ -68,9 +71,8 @@ class RelayClient(
             Logger.w(tag, "connect called while already open peer=$peerLabel")
             return
         }
-        val url = "ws://$host:$port"
-        Logger.i(tag, "connect url=$url")
-        val request = Request.Builder().url(url).build()
+        Logger.i(tag, "connect url=$peerLabel")
+        val request = Request.Builder().url(serverUrl).build()
         ws = client.newWebSocket(request, Listener())
     }
 
