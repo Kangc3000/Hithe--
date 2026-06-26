@@ -107,7 +107,7 @@ class RelayService : LifecycleService() {
         updateNotification(connected = false, host = "")
     }
 
-    private suspend fun runPipeline() {
+    private suspend fun CoroutineScope.runPipeline() {
         val url = settings.serverUrl.trim()
         val rejection = settings.validateServerUrl(url)
         if (rejection != null) {

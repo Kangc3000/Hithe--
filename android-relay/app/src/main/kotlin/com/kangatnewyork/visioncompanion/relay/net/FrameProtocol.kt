@@ -50,7 +50,7 @@ object FrameProtocol {
 
     /** Returns the tag byte, or 0 for empty payloads. */
     fun tagOf(bytes: ByteString): Byte =
-        if (bytes.size > 0) bytes.getByte(0) else 0
+        if (bytes.size > 0) bytes[0] else 0
 
     /** Returns the payload bytes following the tag. */
     fun payloadOf(bytes: ByteString): ByteArray =

@@ -1,0 +1,17 @@
+# Keep the Gradle wrapper scripts with correct, platform-appropriate line
+# endings regardless of the committer's core.autocrlf setting. The Unix
+# launcher MUST stay LF or it won't run on macOS/Linux; the .bat MUST stay
+# CRLF for cmd.exe.
+gradlew        text eol=lf
+*.sh           text eol=lf
+gradlew.bat    text eol=crlf
+*.bat          text eol=crlf
+
+# Binary assets — never munge line endings.
+*.jar          binary
+*.apk          binary
+*.aab          binary
+*.keystore     binary
+*.onnx         binary
+*.png          binary
+*.jpg          binary
