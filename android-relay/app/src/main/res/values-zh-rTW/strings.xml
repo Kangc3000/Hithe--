@@ -15,7 +15,10 @@
     <string name="btn_start">啟動中繼</string>
     <string name="btn_stop">停止中繼</string>
     <string name="btn_test_connection">測試連線</string>
+    <string name="btn_enroll">註冊我的聲音</string>
     <string name="btn_open_logs">開啟紀錄資料夾</string>
+    <string name="enroll_toast">註冊中 — 請自然講話 3 次(每次約 4 秒)</string>
+    <string name="enroll_need_relay">請先啟動中繼,再註冊</string>
 
     <string name="status_stopped">已停止</string>
     <string name="status_connecting">連線中…</string>

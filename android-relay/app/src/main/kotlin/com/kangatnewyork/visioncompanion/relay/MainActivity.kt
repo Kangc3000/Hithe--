@@ -11,6 +11,8 @@ import android.widget.ArrayAdapter
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.kangatnewyork.visioncompanion.relay.databinding.ActivityMainBinding
 import com.kangatnewyork.visioncompanion.relay.net.RelayClient
@@ -51,12 +53,41 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        // Android 15 (API 35) enforces edge-to-edge, which draws content under
+        // the status bar and (with AppCompat) under the action bar. Apply the
+        // system-bar insets as padding on the scroll content so nothing hides
+        // behind the "Vision Companion Relay" title banner or the status bar.
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            insets
+        }
+
         settings = Settings(applicationContext)
         Logger.init(applicationContext, settings.logLevel)
         Logger.i(tag, "onCreate")
 
         bindUi()
+        observeStatus()
         maybeRequestPermissions()
+    }
+
+    private fun observeStatus() {
+        lifecycleScope.launch {
+            RelayStatus.state.collect { snap ->
+                binding.statusText.text = when (snap.conn) {
+                    RelayStatus.Conn.CONNECTED    -> "🟢 Connected"
+                    RelayStatus.Conn.CONNECTING   -> "🟡 Connecting…"
+                    RelayStatus.Conn.DISCONNECTED -> "⚪ Disconnected"
+                }
+                binding.eventText.text = snap.detail
+                // Keep the start/stop button label in sync with reality.
+                val running = snap.conn != RelayStatus.Conn.DISCONNECTED
+                binding.startStopBtn.setText(if (running) R.string.btn_stop else R.string.btn_start)
+            }
+        }
     }
 
     private fun bindUi() {
@@ -92,6 +123,17 @@ class MainActivity : AppCompatActivity() {
         binding.testBtn.setOnClickListener {
             persistFromUi()
             runTestConnection()
+        }
+
+        binding.enrollBtn.setOnClickListener {
+            // Phase 1: enroll the primary user. A name dialog can come later.
+            val isRunning = binding.startStopBtn.text == getString(R.string.btn_stop)
+            if (!isRunning) {
+                android.widget.Toast.makeText(this, R.string.enroll_need_relay, android.widget.Toast.LENGTH_LONG).show()
+            } else {
+                RelayService.enroll(this, "Kang", "康")
+                android.widget.Toast.makeText(this, R.string.enroll_toast, android.widget.Toast.LENGTH_LONG).show()
+            }
         }
 
         binding.openLogsBtn.setOnClickListener { openLogsFolder() }

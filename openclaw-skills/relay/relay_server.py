@@ -167,10 +167,18 @@ class Session:
     cfg_voice: vi.DaemonConfig
     cfg_face: fi.DaemonConfig
     state_dir: Path
+    voice_gallery_path: Path
     stats: SessionStats = field(default_factory=SessionStats)
     out_queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=64))
     last_audio_at: float = 0.0
     last_image_at: float = 0.0
+    # Voice enrollment state. When enroll_active is True, incoming speech
+    # segments are collected as enrollment samples instead of being matched.
+    enroll_active: bool = False
+    enroll_name_en: str = ""
+    enroll_name_zh: str = ""
+    enroll_needed: int = 3
+    enroll_embeddings: list = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -178,16 +186,21 @@ class Session:
 # + optionally synthesize TTS and enqueue PCM frame.
 # ---------------------------------------------------------------------------
 class EventRouter:
-    def __init__(self, session: Session, events_log: Path) -> None:
+    def __init__(self, session: Session, events_log: Path, loop: asyncio.AbstractEventLoop) -> None:
         self.session = session
         self.events_log = events_log
+        # Capture the main event loop reference up front. __call__ runs in a
+        # worker thread (handle_audio_chunk / handle_image_frame are dispatched
+        # via run_in_executor), where asyncio.get_event_loop() raises
+        # "no current event loop in thread". We must schedule work back onto
+        # this captured loop with call_soon_threadsafe.
+        self.loop = loop
         events_log.parent.mkdir(parents=True, exist_ok=True)
 
     def __call__(self, event: dict) -> None:
         """Synchronous emit() callback installed on voice_id and face_id modules.
-        Runs on the asyncio event loop thread (model.process is invoked via
-        run_in_executor; emit is called from inside there). Use call_soon_threadsafe
-        to push into the websocket out_queue."""
+        Invoked from a worker thread (model processing runs in run_in_executor),
+        so all loop interaction must go through self.loop.call_soon_threadsafe."""
         try:
             self.events_log.parent.mkdir(parents=True, exist_ok=True)
             with self.events_log.open("a", encoding="utf-8") as f:
@@ -195,12 +208,10 @@ class EventRouter:
         except OSError:
             LOG.exception("could not append to events.jsonl")
 
-        loop = asyncio.get_event_loop()
-        # Forward as text frame to client.
-        loop.call_soon_threadsafe(
-            asyncio.create_task,
-            self._enqueue_text(json.dumps(event, ensure_ascii=False)),
-        )
+        # Forward as text frame to client. Schedule the coroutine on the loop
+        # thread (create_task must run there, not in this worker thread).
+        payload = json.dumps(event, ensure_ascii=False)
+        self.loop.call_soon_threadsafe(self._spawn, self._enqueue_text(payload))
         self.session.stats.events_out += 1
 
         # Maybe also speak it.
@@ -211,9 +222,15 @@ class EventRouter:
         evt_type = event.get("event", "?")
         LOG.info("announce %s lang=%s text=%r", evt_type, lang, text)
         # Synthesize off the loop thread so we don't block.
-        loop.call_soon_threadsafe(
-            asyncio.create_task, self._synthesize_and_send(lang, text)
+        self.loop.call_soon_threadsafe(
+            self._spawn, self._synthesize_and_send(lang, text)
         )
+
+    @staticmethod
+    def _spawn(coro) -> None:
+        """Runs on the loop thread (via call_soon_threadsafe). Safe to create a
+        task here because we are now on the loop's thread."""
+        asyncio.create_task(coro)
 
     async def _enqueue_text(self, payload: str) -> None:
         try:
@@ -222,7 +239,9 @@ class EventRouter:
             LOG.warning("out_queue full; dropping text event")
 
     async def _synthesize_and_send(self, lang: str, text: str) -> None:
-        loop = asyncio.get_event_loop()
+        # This coroutine runs as a task ON the loop thread, so get_running_loop
+        # is valid here (unlike the worker-thread __call__ above).
+        loop = asyncio.get_running_loop()
         pcm = await loop.run_in_executor(
             None, tts.synthesize, self.session.cfg_tts, lang, text
         )
@@ -264,17 +283,108 @@ def parse_jpeg(payload: bytes) -> np.ndarray | None:
 # ---------------------------------------------------------------------------
 # Per-frame handlers
 # ---------------------------------------------------------------------------
-def handle_audio_chunk(session: Session, chunk: np.ndarray) -> None:
+def feed_audio_chunk(session: Session, chunk: np.ndarray) -> "np.ndarray | None":
+    """Fast path: log RMS and feed the VAD aggregator. Returns a completed
+    speech segment or None. Cheap enough to run inline in the read loop (numpy
+    concat), which keeps chunk ordering correct for the aggregator."""
     rms = float(np.sqrt(np.mean(chunk**2))) if chunk.size else 0.0
     LOG.debug("audio chunk samples=%d rms=%.4f", chunk.size, rms)
-    segment = session.voice_aggregator.feed(chunk)
-    if segment is None:
-        return
+    return session.voice_aggregator.feed(chunk)
+
+
+def process_voice_segment(session: Session, segment: np.ndarray) -> None:
+    """Heavy path: ECAPA embedding + identify-or-enroll. Runs in an executor
+    thread so it NEVER blocks the WebSocket read loop — if it did, the loop
+    couldn't answer the client's keepalive pings during the ~hundreds-of-ms
+    inference and the phone would drop the connection mid-utterance."""
     duration = segment.size / session.cfg_voice.sample_rate
     LOG.info("speech segment duration=%.2fs samples=%d", duration, segment.size)
+    if session.enroll_active:
+        _handle_enroll_segment(session, segment)
+        return
     t0 = time.monotonic()
     session.voice_identifier.process(segment)
     LOG.debug("voice_identifier.process took %.0fms", (time.monotonic() - t0) * 1000)
+
+
+def _handle_enroll_segment(session: Session, segment: np.ndarray) -> None:
+    """Collect one enrollment sample from a speech segment. When enough samples
+    are gathered, average them, write to the gallery, and reload the live
+    identifier. Emits enroll_progress / enroll_done events back to the client."""
+    try:
+        emb = vi.compute_embedding(session.voice_identifier.model, segment)
+    except ValueError as e:
+        LOG.warning("enroll: skipped segment: %s", e)
+        return
+    session.enroll_embeddings.append(emb)
+    collected = len(session.enroll_embeddings)
+    LOG.info("enroll: collected sample %d/%d for %s", collected, session.enroll_needed, session.enroll_name_en)
+    vi.emit(
+        {
+            "event": "enroll_progress",
+            "name_en": session.enroll_name_en,
+            "name_zh": session.enroll_name_zh,
+            "collected": collected,
+            "needed": session.enroll_needed,
+            "timestamp": vi.now_iso(),
+        }
+    )
+    if collected < session.enroll_needed:
+        return
+
+    # Enough samples — average, normalize, write to gallery.
+    import numpy as _np
+    centroid = _np.mean(_np.stack(session.enroll_embeddings), axis=0)
+    norm = float(_np.linalg.norm(centroid))
+    if norm == 0.0:
+        LOG.error("enroll: zero-norm centroid; aborting")
+        session.enroll_active = False
+        session.enroll_embeddings = []
+        return
+    centroid = (centroid / norm).astype(_np.float32)
+
+    key = "".join(c.lower() if c.isalnum() else "_" for c in session.enroll_name_en).strip("_") or "person"
+    gallery_path = session.voice_gallery_path
+    try:
+        gallery = json.loads(gallery_path.read_text(encoding="utf-8")) if gallery_path.exists() else {}
+    except Exception:
+        gallery = {}
+    gallery[key] = {
+        "name_en": session.enroll_name_en,
+        "name_zh": session.enroll_name_zh,
+        "embedding": centroid.tolist(),
+        "enrolled_on": vi.now_iso(),
+        "consent_recorded": True,
+        "sample_count": collected,
+        "notes": "enrolled via relay",
+    }
+    gallery_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = gallery_path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(gallery, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(gallery_path)
+    try:
+        gallery_path.chmod(0o600)
+    except OSError:
+        pass
+
+    # Reload the live identifier's gallery so the new voice matches immediately.
+    session.voice_identifier.gallery = vi.load_gallery(gallery_path)
+    LOG.info("enroll: wrote %s to gallery; identifier now has %d enrolled",
+             key, len(session.voice_identifier.gallery))
+
+    name_en = session.enroll_name_en
+    name_zh = session.enroll_name_zh
+    session.enroll_active = False
+    session.enroll_embeddings = []
+    vi.emit(
+        {
+            "event": "enroll_done",
+            "name_en": name_en,
+            "name_zh": name_zh,
+            "samples": collected,
+            "timestamp": vi.now_iso(),
+        }
+    )
 
 
 def handle_image_frame(session: Session, image: np.ndarray) -> None:
@@ -339,6 +449,7 @@ async def handle_connection(
     state_dir: Path,
     events_log: Path,
     expected_token: str,
+    voice_gallery_path: Path,
 ) -> None:
     global ACTIVE_CLIENT
 
@@ -372,8 +483,13 @@ async def handle_connection(
             return
         ACTIVE_CLIENT = ws
 
+    # Reload galleries from disk on every connection so that a voice enrolled
+    # in a previous session is immediately matchable after a reconnect. The
+    # startup-loaded `voice_gallery`/`face_gallery` lists go stale the moment
+    # an enrollment writes to disk.
+    fresh_voice_gallery = vi.load_gallery(voice_gallery_path)
     aggregator = vi.SpeechAggregator(cfg_voice)
-    voice_id = vi.Identifier(cfg_voice, voice_model, voice_gallery, state_dir)
+    voice_id = vi.Identifier(cfg_voice, voice_model, fresh_voice_gallery, state_dir)
     face_id = fi.FaceIdentifier(cfg_face, face_model, face_gallery, state_dir)
     announcer = tts.TtsAnnouncer(cfg_tts)
     session = Session(
@@ -387,12 +503,15 @@ async def handle_connection(
         cfg_voice=cfg_voice,
         cfg_face=cfg_face,
         state_dir=state_dir,
+        voice_gallery_path=voice_gallery_path,
     )
 
     # Install the emit callback so events from voice_id/face_id flow into our
     # router. The callback is module-global, but we only allow ONE concurrent
-    # client so this is safe in Phase 1.
-    router = EventRouter(session, events_log)
+    # client so this is safe in Phase 1. Capture the running loop here (we're
+    # on the loop thread) so the router can schedule work back from worker
+    # threads via call_soon_threadsafe.
+    router = EventRouter(session, events_log, asyncio.get_running_loop())
     vi.set_emit_callback(router)
     fi.set_emit_callback(router)
 
@@ -401,7 +520,7 @@ async def handle_connection(
     welcome = {
         "event": "session_started",
         "peer": peer,
-        "voice_gallery_size": len(voice_gallery),
+        "voice_gallery_size": len(fresh_voice_gallery),
         "face_gallery_size": len(face_gallery),
         "active": initial_active,
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -430,6 +549,44 @@ async def handle_connection(
                     await ws.send(
                         json.dumps({"type": "pong", "echo": msg.get("nonce")})
                     )
+                elif msg_type == "hello":
+                    LOG.info(
+                        "client hello version=%s transport=%s",
+                        msg.get("version"), msg.get("transport"),
+                    )
+                elif msg_type == "enroll":
+                    name_en = str(msg.get("name_en", "")).strip()
+                    name_zh = str(msg.get("name_zh", "")).strip()
+                    if not name_en or not name_zh:
+                        LOG.warning("enroll request missing name_en/name_zh")
+                        await ws.send(json.dumps({
+                            "event": "enroll_error",
+                            "message": "name_en and name_zh are required",
+                        }, ensure_ascii=False))
+                    elif session.enroll_active and session.enroll_embeddings:
+                        LOG.info("enroll already in progress (%d collected); ignoring re-tap",
+                                 len(session.enroll_embeddings))
+                    else:
+                        session.enroll_active = True
+                        session.enroll_name_en = name_en
+                        session.enroll_name_zh = name_zh
+                        # Phase 1: 1 segment is enough for a usable embedding and
+                        # keeps the flow robust without on-screen progress UI.
+                        # Raise once the app shows enroll progress.
+                        session.enroll_needed = 1
+                        session.enroll_embeddings = []
+                        LOG.info("enroll START name_en=%s name_zh=%s needed=%d",
+                                 name_en, name_zh, session.enroll_needed)
+                        await ws.send(json.dumps({
+                            "event": "enroll_started",
+                            "name_en": name_en,
+                            "name_zh": name_zh,
+                            "needed": session.enroll_needed,
+                        }, ensure_ascii=False))
+                elif msg_type == "enroll_cancel":
+                    session.enroll_active = False
+                    session.enroll_embeddings = []
+                    LOG.info("enroll cancelled by client")
                 elif msg_type == "shutdown":
                     LOG.info("client requested shutdown")
                     break
@@ -448,14 +605,20 @@ async def handle_connection(
                 session.last_audio_at = time.monotonic()
                 chunk = parse_audio_pcm_int16(payload)
                 if chunk is not None:
-                    await loop.run_in_executor(None, handle_audio_chunk, session, chunk)
+                    # Feed the VAD inline (fast, ordered); when a full speech
+                    # segment is ready, offload the heavy ECAPA work WITHOUT
+                    # awaiting so the read loop stays responsive to pings.
+                    segment = feed_audio_chunk(session, chunk)
+                    if segment is not None:
+                        loop.run_in_executor(None, process_voice_segment, session, segment)
             elif ftype == FRAME_TYPE_IMAGE_JPEG:
                 session.stats.image_frames_in += 1
                 session.stats.image_bytes_in += len(payload)
                 session.last_image_at = time.monotonic()
                 image = parse_jpeg(payload)
                 if image is not None:
-                    await loop.run_in_executor(None, handle_image_frame, session, image)
+                    # Offload face inference without awaiting (same reasoning).
+                    loop.run_in_executor(None, handle_image_frame, session, image)
             else:
                 LOG.warning("unknown binary frame type=0x%02x len=%d from %s", ftype, len(payload), peer)
     except websockets.ConnectionClosed as e:
@@ -526,6 +689,7 @@ async def serve(args: argparse.Namespace) -> None:
             state_dir=args.state_dir,
             events_log=args.events_log,
             expected_token=expected_token,
+            voice_gallery_path=args.voice_gallery,
         )
 
     stop = asyncio.Event()
@@ -542,8 +706,12 @@ async def serve(args: argparse.Namespace) -> None:
         args.host,
         args.port,
         max_size=8 * 1024 * 1024,  # allow up to 8MB JPEGs
+        # Keepalive: ping every 20s but tolerate up to 60s without a pong.
+        # The EC2<->Mac-Mini Tailscale link can fall back to a DERP relay
+        # (higher, spikier latency), so a tight 20s pong deadline caused
+        # spurious drops. 60s is forgiving without leaving dead sockets long.
         ping_interval=20,
-        ping_timeout=20,
+        ping_timeout=60,
     ):
         await stop.wait()
 

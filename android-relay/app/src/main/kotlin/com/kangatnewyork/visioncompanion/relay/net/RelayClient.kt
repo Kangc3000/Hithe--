@@ -36,6 +36,9 @@ class RelayClient(
     // files. The pre-? part is fine to show.
     private val peerLabel: String = serverUrl.substringBefore('?').take(120)
 
+    /** Token-stripped URL, safe to show in the notification / logs. */
+    fun label(): String = peerLabel
+
     private val client = OkHttpClient.Builder()
         .pingInterval(20, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.SECONDS)

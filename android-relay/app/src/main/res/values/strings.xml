@@ -17,7 +17,10 @@
     <string name="btn_start">Start relay</string>
     <string name="btn_stop">Stop relay</string>
     <string name="btn_test_connection">Test connection</string>
+    <string name="btn_enroll">Enroll my voice</string>
     <string name="btn_open_logs">Open log folder</string>
+    <string name="enroll_toast">Enrolling — speak naturally 3 times (~4s each)</string>
+    <string name="enroll_need_relay">Start the relay first, then enroll</string>
 
     <!-- Status -->
     <string name="status_stopped">Stopped</string>

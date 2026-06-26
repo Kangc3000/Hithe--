@@ -16,9 +16,19 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/status_stopped"
-            android:textSize="18sp"
+            android:textSize="20sp"
             android:textStyle="bold"
-            android:paddingBottom="16dp" />
+            android:paddingTop="8dp" />
+
+        <TextView
+            android:id="@+id/eventText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textSize="16sp"
+            android:minHeight="48dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="12dp" />
 
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"
@@ -96,6 +106,13 @@
             android:layout_marginTop="8dp"
             android:text="@string/btn_test_connection"
             style="?attr/borderlessButtonStyle" />
+
+        <Button
+            android:id="@+id/enrollBtn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/btn_enroll" />
 
         <Button
             android:id="@+id/openLogsBtn"

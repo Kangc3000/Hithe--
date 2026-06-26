@@ -64,6 +64,10 @@ class RelayService : LifecycleService() {
         when (intent?.action) {
             ACTION_START -> ensureRunning()
             ACTION_STOP  -> { stopRunning(); stopSelf() }
+            ACTION_ENROLL -> sendEnroll(
+                intent.getStringExtra(EXTRA_NAME_EN) ?: "",
+                intent.getStringExtra(EXTRA_NAME_ZH) ?: "",
+            )
             null         -> ensureRunning()  // e.g. system-restarted with sticky intent
         }
         return START_STICKY
@@ -96,6 +100,7 @@ class RelayService : LifecycleService() {
 
     private fun stopRunning() {
         Logger.i(tag, "stopRunning")
+        RelayStatus.set(RelayStatus.Conn.DISCONNECTED, "Stopped")
         supervisor?.cancel()
         supervisor = null
         runCatching { lifecycleScope.launch { transport?.stop() } }
@@ -137,6 +142,7 @@ class RelayService : LifecycleService() {
         // Backoff: 1s, 2s, 4s, 8s, capped at 30s.
         var backoffMs = 1_000L
         while (currentCoroutineActive()) {
+            RelayStatus.setConn(RelayStatus.Conn.CONNECTING)
             val c = RelayClient(url)
             client = c
             c.connect()
@@ -163,37 +169,71 @@ class RelayService : LifecycleService() {
         t.stop()
     }
 
+    private fun sendEnroll(nameEn: String, nameZh: String) {
+        val c = client
+        if (c == null || !c.isOpen()) {
+            Logger.w(tag, "enroll requested but relay not connected; ignoring")
+            return
+        }
+        if (nameEn.isBlank() || nameZh.isBlank()) {
+            Logger.w(tag, "enroll requested with blank name; ignoring")
+            return
+        }
+        val msg = JSONObject()
+            .put("type", "enroll")
+            .put("name_en", nameEn)
+            .put("name_zh", nameZh)
+            .put("samples", 3)
+        Logger.i(tag, "sending enroll request name_en=$nameEn name_zh=$nameZh")
+        RelayStatus.setDetail("Requesting enrollment…")
+        c.sendText(msg)
+    }
+
     private fun currentCoroutineActive(): Boolean = supervisor?.isActive == true
 
+    /** Thrown to break out of the events collect when the connection ends.
+     * `return@collect` only skips one emission — it does NOT terminate the
+     * collect — so we must throw to actually stop and let the supervisor
+     * loop reconnect. */
+    private class ConnectionEnded : Exception()
+
     private suspend fun drainClient(client: RelayClient, transport: GlassesTransport) {
-        client.events.collect { ev ->
-            when (ev) {
-                is RelayClient.Incoming.Open -> {
-                    Logger.i(tag, "ws open; sending hello")
-                    val hello = JSONObject()
-                        .put("type", "hello")
-                        .put("version", BuildConfig.VERSION_NAME)
-                        .put("transport", transport.label)
-                    client.sendText(hello)
-                    updateNotification(connected = true, host = "${client}")
-                }
-                is RelayClient.Incoming.TextEvent -> handleEvent(ev.event, ev.raw)
-                is RelayClient.Incoming.TtsPcm -> {
-                    Logger.i(tag, "tts pcm bytes=${ev.pcm.size}")
-                    transport.playPcm(ev.pcm)
-                }
-                is RelayClient.Incoming.Unknown -> {
-                    Logger.w(tag, "unknown frame tag=0x%02x bytes=%d".format(ev.tag, ev.size))
-                }
-                is RelayClient.Incoming.Closing -> {
-                    Logger.i(tag, "ws closing code=${ev.code} reason='${ev.reason}'")
-                    return@collect  // exit loop, supervisor will reconnect
-                }
-                is RelayClient.Incoming.Failure -> {
-                    Logger.e(tag, "ws failure: ${ev.t.message}")
-                    return@collect
+        try {
+            client.events.collect { ev ->
+                when (ev) {
+                    is RelayClient.Incoming.Open -> {
+                        Logger.i(tag, "ws open; sending hello")
+                        val hello = JSONObject()
+                            .put("type", "hello")
+                            .put("version", BuildConfig.VERSION_NAME)
+                            .put("transport", transport.label)
+                        client.sendText(hello)
+                        updateNotification(connected = true, host = client.label())
+                        RelayStatus.set(RelayStatus.Conn.CONNECTED, "Connected — listening")
+                    }
+                    is RelayClient.Incoming.TextEvent -> handleEvent(ev.event, ev.raw)
+                    is RelayClient.Incoming.TtsPcm -> {
+                        Logger.i(tag, "tts pcm bytes=${ev.pcm.size}")
+                        transport.playPcm(ev.pcm)
+                    }
+                    is RelayClient.Incoming.Unknown -> {
+                        Logger.w(tag, "unknown frame tag=0x%02x bytes=%d".format(ev.tag, ev.size))
+                    }
+                    is RelayClient.Incoming.Closing -> {
+                        Logger.i(tag, "ws closing code=${ev.code} reason='${ev.reason}'")
+                        RelayStatus.setConn(RelayStatus.Conn.CONNECTING)
+                        throw ConnectionEnded()
+                    }
+                    is RelayClient.Incoming.Failure -> {
+                        Logger.e(tag, "ws failure: ${ev.t.message}")
+                        RelayStatus.set(RelayStatus.Conn.CONNECTING, "Reconnecting… (${ev.t.message ?: "lost"})")
+                        throw ConnectionEnded()
+                    }
                 }
             }
+        } catch (_: ConnectionEnded) {
+            // Normal: the WebSocket closed or failed. Returning here completes
+            // collectJob so the supervisor loop performs its backoff + reconnect.
         }
     }
 
@@ -204,13 +244,44 @@ class RelayService : LifecycleService() {
                 Logger.i(tag, "session_started voice_gallery=${event.optInt("voice_gallery_size")} face_gallery=${event.optInt("face_gallery_size")} active=${event.optBoolean("active")}")
             }
             "speaker_identified" -> {
-                Logger.i(tag, "speaker_identified name=${event.optString("name_en")}/${event.optString("name_zh")} conf=${event.optDouble("confidence")}")
+                val zh = event.optString("name_zh"); val en = event.optString("name_en")
+                val conf = event.optDouble("confidence")
+                Logger.i(tag, "speaker_identified name=$en/$zh conf=$conf")
+                RelayStatus.setDetail("🔊 Heard: $zh ($en)  ${"%.2f".format(conf)}")
             }
             "face_identified" -> {
                 Logger.i(tag, "face_identified name=${event.optString("name_en")}/${event.optString("name_zh")} dist=${event.optDouble("distance_estimate_m")} bearing=${event.optString("bearing")} conf=${event.optDouble("confidence")}")
             }
+            "unknown_speaker" -> {
+                val conf = event.optDouble("confidence")
+                Logger.i(tag, "unknown_speaker conf=$conf")
+                RelayStatus.setDetail("Unknown voice (best ${"%.2f".format(conf)})")
+            }
             "daemon_status" -> {
                 Logger.i(tag, "daemon_status daemon=${event.optString("daemon")} status=${event.optString("status")} msg=${event.optString("message")}")
+            }
+            "session_started" -> {
+                val vg = event.optInt("voice_gallery_size")
+                Logger.i(tag, "session_started voice_gallery=$vg")
+                RelayStatus.setDetail("Connected — $vg enrolled voice(s)")
+            }
+            "enroll_started" -> {
+                Logger.i(tag, "enroll_started — SPEAK NOW")
+                RelayStatus.setDetail("⏺ Enrolling — speak clearly now (~5s)")
+            }
+            "enroll_progress" -> {
+                val c = event.optInt("collected"); val n = event.optInt("needed")
+                Logger.i(tag, "enroll_progress $c/$n")
+                RelayStatus.setDetail("⏺ Enrolling… got $c/$n")
+            }
+            "enroll_done" -> {
+                val zh = event.optString("name_zh")
+                Logger.i(tag, "enroll_done — enrolled!")
+                RelayStatus.setDetail("✓ Enrolled: $zh — now say something to test")
+            }
+            "enroll_error" -> {
+                Logger.w(tag, "enroll_error: ${event.optString("message")}")
+                RelayStatus.setDetail("Enroll error: ${event.optString("message")}")
             }
             "pong" -> {
                 Logger.d(tag, "pong echo=${event.optString("echo")}")
@@ -306,6 +377,9 @@ class RelayService : LifecycleService() {
     companion object {
         const val ACTION_START = "com.kangatnewyork.visioncompanion.relay.START"
         const val ACTION_STOP  = "com.kangatnewyork.visioncompanion.relay.STOP"
+        const val ACTION_ENROLL = "com.kangatnewyork.visioncompanion.relay.ENROLL"
+        const val EXTRA_NAME_EN = "name_en"
+        const val EXTRA_NAME_ZH = "name_zh"
         private const val NOTIF_CHANNEL = "vc-relay-fg"
         private const val NOTIF_ID = 1001
 
@@ -320,6 +394,14 @@ class RelayService : LifecycleService() {
 
         fun stop(context: Context) {
             val i = Intent(context, RelayService::class.java).setAction(ACTION_STOP)
+            context.startService(i)
+        }
+
+        fun enroll(context: Context, nameEn: String, nameZh: String) {
+            val i = Intent(context, RelayService::class.java)
+                .setAction(ACTION_ENROLL)
+                .putExtra(EXTRA_NAME_EN, nameEn)
+                .putExtra(EXTRA_NAME_ZH, nameZh)
             context.startService(i)
         }
     }
