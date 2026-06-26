@@ -82,6 +82,11 @@ dependencies {
 
     // Meta Wearables Device Access Toolkit (commented out until SDK access
     // is granted; uncomment when ready). Until then MetaSdkTransport.kt
-    // contains a documented stub.
-    // implementation("com.meta.wearables:device-access-toolkit:0.1.0")
+    // contains a documented stub. Coordinates verified 2026-06 from
+    // github.com/facebook/meta-wearables-dat-android (current version 0.8.0).
+    // mwdat-mockdevice lets you develop against a simulated device with no
+    // physical glasses.
+    // implementation("com.meta.wearable:mwdat-core:0.8.0")
+    // implementation("com.meta.wearable:mwdat-camera:0.8.0")
+    // implementation("com.meta.wearable:mwdat-mockdevice:0.8.0")
 }
