@@ -12,7 +12,7 @@ metadata:
         default: "~/.hermes/voice-companion"
         prompt: "Where should this skill store its data?"
 required_environment_variables: []
-platforms: [linux]
+platforms: [linux, darwin]
 ---
 
 # face-id
@@ -171,6 +171,27 @@ the `control` skill (`hithe on/off/toggle/status`). When deactivated,
 face-id keeps its InsightFace model loaded but discards every frame on
 the hot path — toggling back on is near-instant. Use `hithe`, not
 `systemctl stop`, for routine pause/resume.
+
+## Platform note: macOS
+
+Mac Mini deployment uses launchd. The face-id standalone daemon plist
+is **not the primary path** (relay-daemon is). Translate as:
+
+| Linux (systemd)                                       | macOS (launchd)                                                            |
+|-------------------------------------------------------|----------------------------------------------------------------------------|
+| `systemctl --user status face-id-daemon`              | `launchctl print gui/$(id -u)/com.hithe.face-id-daemon`                    |
+| `systemctl --user restart face-id-daemon`             | `launchctl kickstart -k gui/$(id -u)/com.hithe.face-id-daemon`             |
+| `journalctl --user -u face-id-daemon -n 100`          | `tail -n 100 ~/.hermes/voice-companion/face-daemon.log`                    |
+
+To enable the standalone path on the Mac Mini:
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.hithe.face-id-daemon.plist
+```
+
+First run triggers a Camera TCC prompt. If denied,
+`cv2.VideoCapture(0).read()` returns `(False, None)` silently — fix in
+System Settings → Privacy & Security → Camera, then kickstart.
 
 ## Self-improvement hints
 

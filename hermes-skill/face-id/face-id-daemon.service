@@ -10,7 +10,8 @@ ExecStart=%h/.hermes/voice-companion/scripts/run-face-pipeline.sh
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=10
-StandardOutput=append:%h/.hermes/voice-companion/events.jsonl
+# Note: events.jsonl is written by run-face-pipeline.sh via `tee -a` so
+# the same behavior works on macOS/launchd. Only stderr goes here.
 StandardError=append:%h/.hermes/voice-companion/face-daemon.log
 Environment=PYTHONUNBUFFERED=1
 Environment=HOME=%h

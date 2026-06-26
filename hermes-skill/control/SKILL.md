@@ -7,7 +7,7 @@ metadata:
     tags: [accessibility, vision-companion, control]
     category: assistive
 required_environment_variables: []
-platforms: [linux]
+platforms: [linux, darwin]
 ---
 
 # control
@@ -36,14 +36,16 @@ Trigger phrases (Chinese):
 - "現在開著嗎? / 解語還在跑嗎?"
 - "切換"
 
-Note: "stop the daemon" is different — that means `systemctl --user stop`,
-which unloads the model and is a heavier operation. This skill is for
-the soft activate/deactivate, not full daemon shutdown.
+Note: "stop the daemon" is different — that means `systemctl --user stop`
+(Linux) or `launchctl bootout` (macOS), which unloads the model and is a
+heavier operation. This skill is for the soft activate/deactivate, not
+full daemon shutdown.
 
 ## When NOT to use this skill
 
-- For a hard daemon stop (model unload, free memory): use systemctl, not
-  this skill. Tell the user the difference if they seem to want a full stop.
+- For a hard daemon stop (model unload, free memory): use systemctl
+  (Linux) or launchctl bootout (macOS), not this skill. Tell the user
+  the difference if they seem to want a full stop.
 - For removing a person from the gallery: that's the voice-id / face-id
   skill's `--overwrite` or gallery edit, not this one.
 - For changing language mode: that edits `config.yaml` and restarts the

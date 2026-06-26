@@ -7,7 +7,7 @@ metadata:
     tags: [accessibility, vision-companion, relay, network]
     category: assistive
 required_environment_variables: []
-platforms: [linux]
+platforms: [linux, darwin]
 ---
 
 # relay
@@ -202,6 +202,37 @@ face-id pipelines):
    NOT re-check this at runtime. Restart the relay to apply. This is
    intentional: a runtime poll would be a per-frame stat() and the
    safer path is "decide at startup."
+
+## Platform note: macOS
+
+Commands above use systemd (Linux). On the Mac Mini deployment, the same
+operations are:
+
+| Linux (systemd)                                            | macOS (launchd)                                                                          |
+|------------------------------------------------------------|------------------------------------------------------------------------------------------|
+| `systemctl --user status relay-daemon`                     | `launchctl print gui/$(id -u)/com.hithe.relay-daemon \| head -30`                        |
+| `systemctl --user restart relay-daemon`                    | `launchctl kickstart -k gui/$(id -u)/com.hithe.relay-daemon`                             |
+| `systemctl --user enable --now relay-daemon`               | `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.hithe.relay-daemon.plist`   |
+| `systemctl --user disable --now relay-daemon`              | `launchctl bootout gui/$(id -u)/com.hithe.relay-daemon`                                  |
+| `journalctl --user -u relay-daemon -n 100 --no-pager`      | `tail -n 100 ~/.hermes/voice-companion/relay-daemon.log`                                 |
+| Drop-in `~/.config/systemd/user/relay-daemon.service.d/token.conf` | PlistBuddy on `~/Library/LaunchAgents/com.hithe.relay-daemon.plist` `EnvironmentVariables.RELAY_TOKEN` |
+| `ss -lntp \| grep 8765`                                    | `lsof -nP -iTCP:8765 -sTCP:LISTEN`                                                       |
+
+Token rotation on macOS:
+
+```bash
+NEW="vcr_$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
+PLIST=~/Library/LaunchAgents/com.hithe.relay-daemon.plist
+/usr/libexec/PlistBuddy -c "Set :EnvironmentVariables:RELAY_TOKEN ${NEW}" "$PLIST" 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:RELAY_TOKEN string ${NEW}" "$PLIST"
+sed -i '' "s|^relay_token:.*|relay_token: \"${NEW}\"|" ~/.hermes/voice-companion/config.yaml
+launchctl kickstart -k gui/$(id -u)/com.hithe.relay-daemon
+echo "$NEW"
+```
+
+The user LaunchAgent only runs while the user is in a console GUI
+session. Mac Mini must be set to auto-login (System Settings → Users &
+Groups → Automatic login) or the agent won't start at boot.
 
 ## Self-improvement hints
 

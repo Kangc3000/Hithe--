@@ -14,6 +14,7 @@ VENV="${DATA_DIR}/.venv"
 SCRIPTS="${DATA_DIR}/scripts"
 CONFIG="${DATA_DIR}/config.yaml"
 GALLERY="${SCRIPTS}/gallery/voice_gallery.json"
+EVENTS_LOG="${DATA_DIR}/events.jsonl"
 
 # Language hint for "mirror" mode. The orchestrator (Hermes) can change this
 # by editing config.yaml's preferred_language and restarting the unit, or by
@@ -21,20 +22,25 @@ GALLERY="${SCRIPTS}/gallery/voice_gallery.json"
 LAST_INPUT_LANG="${LAST_INPUT_LANG:-zh}"
 
 if [[ ! -x "${VENV}/bin/python" ]]; then
-  echo "venv not found at ${VENV}; run install-on-hermes.sh first" >&2
+  echo "venv not found at ${VENV}; run install-on-hermes.sh (Linux) or install-on-mac.sh (macOS) first" >&2
   exit 1
 fi
 
 # shellcheck disable=SC1091
 source "${VENV}/bin/activate"
 
-# voice_id.py emits JSON Lines on stdout; tts_announce.py consumes them.
-# We use process substitution to keep both in the same systemd unit so a
-# crash of either tears down the whole pipeline (Restart=on-failure).
+# Make sure the events log path exists before tee writes to it.
+mkdir -p "$(dirname "${EVENTS_LOG}")"
+
+# voice_id.py emits JSON Lines on stdout. We tee them to events.jsonl
+# (append-only) so the event history survives daemon restarts on both
+# Linux/systemd and macOS/launchd. Then the same stream pipes into
+# tts_announce.py which decides what to actually speak.
 exec python -u "${SCRIPTS}/voice_id.py" \
     --listen-mic \
     --config "${CONFIG}" \
     --gallery "${GALLERY}" \
+  | tee -a "${EVENTS_LOG}" \
   | python -u "${SCRIPTS}/tts_announce.py" \
     --config "${CONFIG}" \
     --last-input-lang "${LAST_INPUT_LANG}"

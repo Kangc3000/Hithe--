@@ -12,7 +12,7 @@ metadata:
         default: "~/.hermes/voice-companion"
         prompt: "Where should this skill store its data?"
 required_environment_variables: []
-platforms: [linux]
+platforms: [linux, darwin]
 ---
 
 # voice-id
@@ -235,6 +235,26 @@ unit, use the `control` skill (`hithe on/off/toggle/status`). The daemon
 keeps its model loaded while paused so re-activation is near-instant.
 Don't use `systemctl stop` for routine pause/resume — that unloads the
 ~80MB ECAPA model and re-loading takes seconds.
+
+## Platform note: macOS
+
+Mac Mini deployment uses launchd. Translate as:
+
+| Linux (systemd)                                       | macOS (launchd)                                                            |
+|-------------------------------------------------------|----------------------------------------------------------------------------|
+| `systemctl --user status voice-id-daemon`             | `launchctl print gui/$(id -u)/com.hithe.voice-id-daemon`                   |
+| `systemctl --user restart voice-id-daemon`            | `launchctl kickstart -k gui/$(id -u)/com.hithe.voice-id-daemon`            |
+| `journalctl --user -u voice-id-daemon -n 100`         | `tail -n 100 ~/.hermes/voice-companion/daemon.log`                         |
+
+On macOS, the standalone voice-id-daemon is **not the primary path** —
+the relay-daemon is. The plist exists for parity and is rendered but not
+auto-loaded. To enable the standalone path on the Mac Mini:
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.hithe.voice-id-daemon.plist
+```
+
+First run triggers a Microphone TCC prompt. Click Allow.
 
 ## Phase 1 limitations the agent should disclose honestly
 
