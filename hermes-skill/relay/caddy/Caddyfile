@@ -1,0 +1,28 @@
+# Caddy config for the direct-to-Mac-Mini relay path (production since 2026-07-02).
+#
+# Replaces the EC2 Apache reverse proxy. The phone connects straight to the
+# home Mac Mini over the public internet; there is no EC2 hop and no
+# Tailscale/DERP relay (which was causing the connection to drop every
+# 20-60s). Install location on the Mac Mini: /opt/homebrew/etc/Caddyfile
+#
+# Requires (see caddy/README.md):
+#   - DNS A record: meta.kangatnewyork.com -> home public IP
+#   - Router port-forward: public 80 + 9443 -> 192.168.0.99
+#   - Caddy running as root (com.hithe.caddy LaunchDaemon) to bind port 80
+
+{
+	email kangc3000@gmail.com
+	# The home's public 443 belongs to a different machine, so ACME TLS-ALPN
+	# (which validates on 443) can't be used. Serve HTTPS on 9443 and let
+	# Caddy solve HTTP-01 on port 80 (which the router forwards here) to
+	# obtain / auto-renew the Let's Encrypt certificate.
+	http_port 80
+	https_port 9443
+}
+
+meta.kangatnewyork.com {
+	# Terminate TLS here; forward to the relay bound on loopback. The relay
+	# does its own token check (?token=...), so Caddy just proxies bytes and
+	# transparently handles the WebSocket upgrade.
+	reverse_proxy 127.0.0.1:8765
+}
