@@ -86,7 +86,7 @@ dependencies {
     // github.com/facebook/meta-wearables-dat-android (current version 0.8.0).
     // mwdat-mockdevice lets you develop against a simulated device with no
     // physical glasses.
-    // implementation("com.meta.wearable:mwdat-core:0.8.0")
-    // implementation("com.meta.wearable:mwdat-camera:0.8.0")
-    // implementation("com.meta.wearable:mwdat-mockdevice:0.8.0")
+    implementation("com.meta.wearable:mwdat-core:0.8.0")
+    implementation("com.meta.wearable:mwdat-camera:0.8.0")
+    implementation("com.meta.wearable:mwdat-mockdevice:0.8.0")
 }
