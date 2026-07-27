@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Vision Companion (解語) voice-id standalone daemon — macOS launchd unit.
+
+  This is the "standalone" path that listens to a USB mic on the Mac Mini
+  and announces names through the local speakers via Piper TTS. It is
+  NOT the primary deployment path — the relay-daemon is. This plist
+  exists for parity with the Linux .service file and for testing on
+  the host without involving the Android relay.
+
+  install-on-mac.sh writes the rendered file but does NOT auto-load it.
+  Load only when you actually want the standalone behavior:
+    launchctl bootstrap gui/$(id -u) \
+      ~/Library/LaunchAgents/com.hithe.voice-id-daemon.plist
+
+  TCC: first run will prompt for Microphone access. Click Allow.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hithe.voice-id-daemon</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>__EXEC_PATH__</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>__HOME__</string>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>__DATA_DIR__</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+
+    <!-- events.jsonl is written by run-pipeline.sh via `tee -a` so launchd
+         doesn't have to manage that file. Only stderr is routed here. -->
+    <key>StandardErrorPath</key>
+    <string>__DATA_DIR__/daemon.log</string>
+
+    <key>ProcessType</key>
+    <string>Interactive</string>
+</dict>
+</plist>

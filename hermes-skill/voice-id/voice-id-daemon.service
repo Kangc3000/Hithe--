@@ -1,0 +1,33 @@
+[Unit]
+Description=Vision Companion - Voice ID Daemon
+Documentation=https://github.com/Kangc3000/Hithe--
+After=default.target sound.target
+Wants=sound.target
+
+[Service]
+Type=simple
+ExecStart=%h/.hermes/voice-companion/scripts/run-pipeline.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+# Note: events.jsonl is written by run-pipeline.sh via `tee -a` (so the
+# same behavior works on macOS/launchd, where StandardOutPath truncates).
+# We only route stderr here.
+StandardError=append:%h/.hermes/voice-companion/daemon.log
+Environment=PYTHONUNBUFFERED=1
+Environment=HOME=%h
+
+# D-015: 1GB RAM cap to protect the 8GB host. Adjust only with a written reason.
+MemoryMax=1G
+MemoryHigh=900M
+
+# Light hardening. Voice-id is local-only; no network namespace tricks needed,
+# but we can still drop most capabilities and isolate /tmp.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.hermes/voice-companion
+
+[Install]
+WantedBy=default.target

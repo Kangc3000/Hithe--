@@ -1,0 +1,20 @@
+# Vision Companion - face-id daemon Python dependencies
+# Tested with Python 3.11+ on Ubuntu 26.04. Installs into the same venv as
+# voice-id (~/.hermes/voice-companion/.venv) so the two daemons share torch
+# and PyYAML and don't duplicate ~2GB of disk.
+
+# Face detection + ArcFace embeddings (D-009, ~250MB model download on first use)
+insightface>=0.7.3,<0.8.0
+onnxruntime>=1.16.0,<2.0.0
+
+# Image I/O. Headless variant — no GUI deps, but VideoCapture / V4L2 still works.
+opencv-python-headless>=4.8.0,<5.0.0
+
+# Pulled in transitively by insightface but pinned here so the install is
+# reproducible without surprises.
+numpy>=1.24.0,<3.0.0
+scipy>=1.11.0,<2.0.0
+scikit-image>=0.21.0,<0.25.0
+
+# Config. Already installed by voice-id but listed for standalone installs.
+PyYAML>=6.0,<7.0

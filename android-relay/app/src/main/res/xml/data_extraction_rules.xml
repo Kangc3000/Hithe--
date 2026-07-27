@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Disable cloud + device-transfer backup of this app's data.
+     The relay app holds the configured Hermes host + a local log; the
+     Hermes host shouldn't be auto-restored onto a new phone without the
+     user re-entering it consciously. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+    </device-transfer>
+</data-extraction-rules>

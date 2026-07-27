@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">解語中繼</string>
+
+    <string name="label_server_url">伺服器網址</string>
+    <string name="hint_server_url">wss://kangatnewyork.com/vc-relay/?token=vcr_xxx</string>
+    <string name="help_server_url">完整 WebSocket URL。對外公開走 wss://，Tailscale 直連用 ws://。</string>
+    <string name="label_image_fps">影像 FPS</string>
+    <string name="hint_image_fps">0 = 關閉、1、2、5</string>
+    <string name="label_log_level">紀錄等級</string>
+    <string name="label_transport">眼鏡傳輸層</string>
+    <string name="transport_phone">手機麥克風 + 相機（開發用）</string>
+    <string name="transport_meta">Meta Wearables SDK（尚未啟用）</string>
+
+    <string name="btn_start">啟動中繼</string>
+    <string name="btn_stop">停止中繼</string>
+    <string name="btn_test_connection">測試連線</string>
+    <string name="btn_enroll">註冊我的聲音</string>
+    <string name="btn_open_logs">開啟紀錄資料夾</string>
+    <string name="enroll_toast">註冊中 — 請自然講話 3 次(每次約 4 秒)</string>
+    <string name="enroll_need_relay">請先啟動中繼,再註冊</string>
+
+    <string name="status_stopped">已停止</string>
+    <string name="status_connecting">連線中…</string>
+    <string name="status_connected">已連線到 %1$s</string>
+    <string name="status_error">錯誤：%1$s</string>
+
+    <string name="notif_channel_name">解語中繼</string>
+    <string name="notif_channel_desc">前景服務狀態（音訊/影像中繼）</string>
+    <string name="notif_title">解語執行中</string>
+    <string name="notif_text_connected">已連線到 %1$s</string>
+    <string name="notif_text_disconnected">未連線</string>
+
+    <string name="perm_rationale">需要麥克風、相機、通知權限才能把音訊與影像送到 Hermes。請按「允許」繼續。</string>
+</resources>

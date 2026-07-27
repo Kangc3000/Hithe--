@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Root LaunchDaemon that runs Caddy as the public TLS front-end for the relay.
+  Root is required so Caddy can bind port 80 (Let's Encrypt HTTP-01). Install:
+
+    sudo cp com.hithe.caddy.plist /Library/LaunchDaemons/
+    sudo chown root:wheel /Library/LaunchDaemons/com.hithe.caddy.plist
+    sudo chmod 644 /Library/LaunchDaemons/com.hithe.caddy.plist
+    sudo launchctl bootstrap system /Library/LaunchDaemons/com.hithe.caddy.plist
+
+  HOME must be set or Caddy tries to write its cert store to a read-only dir.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hithe.caddy</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/caddy</string>
+        <string>run</string>
+        <string>--config</string>
+        <string>/opt/homebrew/etc/Caddyfile</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/var/root</string>
+        <key>XDG_DATA_HOME</key>
+        <string>/var/root/.local/share</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/hermes/.hermes/voice-companion/caddy.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/hermes/.hermes/voice-companion/caddy.log</string>
+</dict>
+</plist>

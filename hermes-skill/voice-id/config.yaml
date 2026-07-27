@@ -1,0 +1,140 @@
+# Vision Companion - voice-id daemon runtime config
+# Single source of truth for all daemons. Daemons reload on:
+#   systemctl --user restart voice-id-daemon
+#
+# Schema is defined in IMPLEMENTATION-GUIDE.md section 3.3. Don't add keys
+# without updating that document first.
+
+# ------ Voice ID matching ------
+
+# Cosine similarity threshold for considering a voice a match. ECAPA-TDNN
+# embeddings are L2-normalized; this is a value in [-1, 1]. Conservative
+# default per D-008: false positives (wrong name spoken aloud) are socially
+# worse than false negatives. Raise toward 0.75 if mistaken matches happen.
+similarity_threshold: 0.65
+
+# Per-speaker cooldown: don't re-announce the same person within this many
+# seconds. Prevents the "she keeps saying my name" problem.
+announcement_cooldown_seconds: 8.0
+
+# Below this RMS, the audio chunk is treated as silence and ignored.
+# 0.005 is roughly "ambient room noise" on a typical USB mic. Raise if
+# the daemon is firing on background noise; lower if it's missing soft talkers.
+silence_rms: 0.005
+
+# Minimum continuous speech needed before computing an embedding (seconds).
+# ECAPA quality drops below ~1.5s of speech; 2.0 is the safe floor.
+min_speech_seconds: 2.0
+
+# How much speech is fed to ECAPA at most per identification (seconds).
+# Longer doesn't help much past ~5s and just delays announcements.
+max_speech_seconds: 5.0
+
+# Suppress unknown_speaker events: emit at most one per N seconds of unknown
+# speech. Per spec section 5.1 the default is ~30s; raise for quieter logs.
+unknown_speaker_emit_interval_seconds: 30.0
+
+# Audio capture
+sample_rate: 16000
+input_channels: 1
+input_device: null   # null = default mic; or set an index/name from `python -m sounddevice`
+
+# ------ Language routing ------
+
+# mirror | preferred_zh | preferred_en
+# - mirror: use the language hint from the orchestrator (--last-input-lang)
+# - preferred_zh: always announce in Chinese
+# - preferred_en: always announce in English
+# Phase 1 has no STT, so "mirror" effectively reads the hint passed at
+# pipeline startup. Phase 2+ will plug in faster-whisper for true mirroring.
+language_mode: mirror
+preferred_language: zh
+
+# ------ TTS (Piper) ------
+
+# `piper` binary path. The piper-tts pip package installs this in the venv's
+# bin/. Leave as "piper" to use whatever is on PATH inside the venv.
+piper_binary: piper
+
+# Where Piper voice .onnx files live. Install script downloads the two below
+# into ~/.local/share/piper/voices/.
+voices_dir: ~/.local/share/piper/voices
+voice_zh: zh_CN-huayan-medium.onnx
+voice_en: en_US-amy-medium.onnx
+
+# Audio playback. `aplay` is in alsa-utils on Ubuntu and works without
+# extra config. Override if you need PulseAudio/PipeWire-specific playback.
+audio_player: aplay
+audio_player_args: ["-q"]
+
+# Templates for the spoken announcement. Only {name_en}, {name_zh},
+# and {confidence} are substituted.
+announcement_template_zh: "{name_zh}"
+announcement_template_en: "{name_en}"
+
+# Global TTS rate limit: don't speak more than once per N seconds, regardless
+# of who was identified. Different from announcement_cooldown_seconds, which
+# is per-name.
+rate_limit_seconds: 3.0
+
+# ------ Phase 2: Face ID ------
+
+# ArcFace embeddings use a different scale than ECAPA. 0.55 is a typical
+# safe threshold; raise toward 0.65 if seeing wrong-person matches.
+face_similarity_threshold: 0.55
+
+# Suppress unknown_face spam. Same idea as unknown_speaker_emit_interval_seconds.
+unknown_face_emit_interval_seconds: 30.0
+
+# Target processing rate. Higher = more CPU, more responsive. 5 FPS is a
+# reasonable default on the 8GB host with buffalo_l on CPU.
+face_target_fps: 5.0
+
+# Detection input size for InsightFace. Smaller = faster but misses smaller
+# faces; 640 is the standard.
+face_detection_size: 640
+
+# Pinhole-camera distance estimation. Default values are calibrated for a
+# typical 720p webcam; recalibrate by enrolling someone at a known distance
+# and adjusting until the announcement matches reality.
+face_camera_focal_length_px: 600.0
+face_real_height_m: 0.25
+
+# Templates: only {name_en}, {name_zh}, {distance_m}, {bearing}, {confidence}
+# are substituted. Distance is announced to one decimal place.
+face_announcement_template_zh: "{name_zh}, 距離大約{distance_m}公尺"
+face_announcement_template_en: "{name_en}, about {distance_m} meters"
+
+openai_model: gpt-5-mini
+openai_max_tokens: 200
+scene_describe_default_language: zh
+scene_describe_modes: [scene, ocr, sign, menu]
+
+# ------ Network ------
+
+# Shared secret for the WebSocket relay. When non-empty, incoming
+# connections must include ?token=<value> in the URL or they are rejected
+# with WebSocket close code 4401. Generate with:
+#   echo "vcr_$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
+#
+# This is normally set via the systemd drop-in at
+# ~/.config/systemd/user/relay-daemon.service.d/token.conf using
+# Environment=RELAY_TOKEN=...  Leaving it here makes the canonical value
+# discoverable (e.g. so Hermes can read it back to the user on request).
+# If both this and RELAY_TOKEN env are set, --token CLI / env wins.
+#
+# WARNING: leaving this empty when the relay is exposed to the public
+# internet (e.g. via Apache + Tailscale + a public domain) means anyone
+# who finds the URL can connect. Do not deploy publicly without a token.
+relay_token: ""
+
+# ------ Hard interlocks (NEVER weaken in code) ------
+
+# When true, the daemon refuses all cloud calls AND skips all face/voice
+# identification. See PROJECT-SPEC.md section 7. Defaults off; turning this
+# on requires manual edit + restart.
+classroom_mode: false
+
+# Emergency kill switch for any cloud-calling daemon (Phase 3+). Has no
+# effect on local-only daemons (voice-id is local-only).
+disable_cloud_apis_globally: false
