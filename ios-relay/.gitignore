@@ -1,0 +1,5 @@
+*.xcframework/
+build/
+xcuserdata/
+*.xcuserstate
+.claude/settings.json
